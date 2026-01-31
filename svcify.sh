@@ -58,12 +58,34 @@ if [ -z "${1:-}" ] && [ ! -t 0 ]; then
   SCRIPT_PATH="${INSTALL_DIR}/svcify"
   REPO_URL="https://raw.githubusercontent.com/noodlescripter/svcify/main/svcify.sh"
 
-  echo "Installing svcify to ${INSTALL_DIR}..."
+  echo ""
+  echo "================================"
+  echo "  svcify installer"
+  echo "================================"
+  echo ""
+  echo "This will install svcify to ${INSTALL_DIR}"
+  echo ""
+  echo "Review the source code at:"
+  echo "  https://github.com/noodlescripter/svcify"
+  echo ""
+
+  read -r -p "Proceed with installation? [y/N]: " confirm < /dev/tty
+  case "$confirm" in
+    [yY][eE][sS]|[yY])
+      ;;
+    *)
+      echo "Installation cancelled."
+      exit 0
+      ;;
+  esac
 
   if [ "$(id -u)" -ne 0 ]; then
     echo "Error: Installation requires root. Run with: curl ... | sudo bash"
     exit 1
   fi
+
+  echo ""
+  echo "Installing..."
 
   # Download the script to install path
   if command -v curl &> /dev/null; then
@@ -73,6 +95,7 @@ if [ -z "${1:-}" ] && [ ! -t 0 ]; then
   fi
 
   chmod +x "$SCRIPT_PATH"
+  echo ""
   echo "Done! Run 'svcify --help' to get started."
   exit 0
 fi
@@ -113,9 +136,32 @@ if [ "$COMMAND" = "setup" ]; then
   INSTALL_DIR="/usr/local/bin"
   SCRIPT_PATH="${INSTALL_DIR}/${SCRIPT_NAME}"
 
-  echo "Installing svcify to ${INSTALL_DIR}..."
+  echo ""
+  echo "================================"
+  echo "  svcify installer"
+  echo "================================"
+  echo ""
+  echo "This will install svcify to ${INSTALL_DIR}"
+  echo ""
+  echo "Review the source code at:"
+  echo "  https://github.com/noodlescripter/svcify"
+  echo ""
+
+  read -r -p "Proceed with installation? [y/N]: " confirm
+  case "$confirm" in
+    [yY][eE][sS]|[yY])
+      ;;
+    *)
+      echo "Installation cancelled."
+      exit 0
+      ;;
+  esac
+
+  echo ""
+  echo "Installing..."
   cp "$0" "$SCRIPT_PATH"
   chmod +x "$SCRIPT_PATH"
+  echo ""
   echo "Done! Run 'svcify --help' to get started."
   exit 0
 fi
