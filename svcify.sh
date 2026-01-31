@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # svcify - Turn any application into a systemd service
-# https://github.com/your-username/svcify
+# https://github.com/noodlescripter/svcify
 
 SCRIPT_NAME="svcify"
 
@@ -56,7 +56,7 @@ get_service_file() {
 if [ -z "${1:-}" ] && [ ! -t 0 ]; then
   INSTALL_DIR="/usr/local/bin"
   SCRIPT_PATH="${INSTALL_DIR}/svcify"
-  REPO_URL="https://raw.githubusercontent.com/your-username/svcify/main/svcify.sh"
+  REPO_URL="https://raw.githubusercontent.com/noodlescripter/svcify/main/svcify.sh"
 
   echo "Installing svcify to ${INSTALL_DIR}..."
 
