@@ -9,7 +9,7 @@ Turn any Node.js app into a systemd service.
 Run the installer directly with a single command:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/your-username/svcify/main/svcify.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/noodlescripter/svcify/main/svcify.sh | sudo bash
 ```
 
 ### Manual Installation
@@ -18,7 +18,7 @@ If you prefer to review the script before running:
 
 ```bash
 # Download the script
-curl -sSL -o svcify.sh https://raw.githubusercontent.com/your-username/svcify/main/svcify.sh
+curl -sSL -o svcify.sh https://raw.githubusercontent.com/noodlescripter/svcify/main/svcify.sh
 
 # Review it
 cat svcify.sh
