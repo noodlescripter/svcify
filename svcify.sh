@@ -21,10 +21,14 @@ print_usage() {
   echo "  list        List all services created by svcify"
   echo ""
   echo "Install options:"
-  echo "  --app-dir <path>      Path to Node.js app (default: current directory)"
+  echo "  --app-dir <path>      Path to application (default: current directory)"
   echo "  --entry <file>        Entry file (default: auto-detect)"
-  echo "  --node <path>         Path to node binary (default: auto-detect)"
+  echo "  --node <path>         Path to node binary (Node.js apps only)"
   echo "  --dry-run             Generate service file without installing"
+  echo ""
+  echo "Supported app types:"
+  echo "  Node.js (.js)         Runs with node"
+  echo "  Shell scripts (.sh)   Runs with bash"
   echo ""
   echo "Examples:"
   echo "  sudo $SCRIPT_NAME list"
@@ -241,6 +245,7 @@ APP_DIR="$(pwd)"
 ENTRY_POINT=""
 NODE_EXEC=""
 DRY_RUN=false
+APP_TYPE=""  # "node" or "shell", detected from entry point
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -281,11 +286,6 @@ if [ ! -d "$APP_DIR" ]; then
   exit 1
 fi
 
-if [ ! -x "$NODE_EXEC" ]; then
-  echo "Error: Node.js not found at '$NODE_EXEC'."
-  exit 1
-fi
-
 # Auto-detect entry point if not provided
 if [ -z "$ENTRY_POINT" ]; then
   if [ -f "${APP_DIR}/package.json" ]; then
@@ -295,7 +295,17 @@ if [ -z "$ENTRY_POINT" ]; then
     fi
   fi
   if [ -z "$ENTRY_POINT" ]; then
+    # Try Node.js files first
     for candidate in index.js main.js app.js server.js src/index.js dist/index.js; do
+      if [ -f "${APP_DIR}/${candidate}" ]; then
+        ENTRY_POINT="$candidate"
+        break
+      fi
+    done
+  fi
+  if [ -z "$ENTRY_POINT" ]; then
+    # Try shell scripts
+    for candidate in run.sh start.sh app.sh main.sh; do
       if [ -f "${APP_DIR}/${candidate}" ]; then
         ENTRY_POINT="$candidate"
         break
@@ -314,14 +324,40 @@ if [ ! -f "$ENTRY_FILE" ]; then
   exit 1
 fi
 
+# Detect app type from entry point extension
+case "$ENTRY_POINT" in
+  *.sh)
+    APP_TYPE="shell"
+    ;;
+  *)
+    APP_TYPE="node"
+    ;;
+esac
+
+# Validate Node.js is available for Node.js apps
+if [ "$APP_TYPE" = "node" ] && [ ! -x "$NODE_EXEC" ]; then
+  echo "Error: Node.js not found at '$NODE_EXEC'."
+  exit 1
+fi
+
 ENV_FILE="${APP_DIR}/.env"
 RUN_USER="${SUDO_USER:-$(logname 2>/dev/null || echo root)}"
 
 echo "Installing service '${SERVICE_NAME}'..."
 echo "  App directory: ${APP_DIR}"
 echo "  Entry point:   ${ENTRY_POINT}"
-echo "  Node binary:   ${NODE_EXEC}"
+echo "  App type:      ${APP_TYPE}"
+if [ "$APP_TYPE" = "node" ]; then
+  echo "  Node binary:   ${NODE_EXEC}"
+fi
 echo "  Run as user:   ${RUN_USER}"
+
+# Generate ExecStart based on app type
+if [ "$APP_TYPE" = "shell" ]; then
+  EXEC_START="/usr/bin/env bash ${ENTRY_FILE}"
+else
+  EXEC_START="${NODE_EXEC} ${ENTRY_FILE}"
+fi
 
 SERVICE_CONTENT="[Unit]
 Description=svcify: ${SERVICE_NAME}
@@ -330,10 +366,17 @@ After=network.target
 [Service]
 Type=simple
 User=${RUN_USER}
-WorkingDirectory=${APP_DIR}
-Environment=NODE_ENV=production
+WorkingDirectory=${APP_DIR}"
+
+# Add NODE_ENV for Node.js apps only
+if [ "$APP_TYPE" = "node" ]; then
+  SERVICE_CONTENT="${SERVICE_CONTENT}
+Environment=NODE_ENV=production"
+fi
+
+SERVICE_CONTENT="${SERVICE_CONTENT}
 EnvironmentFile=-${ENV_FILE}
-ExecStart=${NODE_EXEC} ${ENTRY_FILE}
+ExecStart=${EXEC_START}
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
