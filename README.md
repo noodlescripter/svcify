@@ -83,7 +83,28 @@ sudo svcify restart <name>      # Restart service
 sudo svcify status <name>       # Show status
 sudo svcify logs <name>         # Follow logs
 sudo svcify list                # List all svcify services
+svcify monitor                  # Live dashboard (like pm2 monit)
 ```
+
+## Monitor Dashboard
+
+Real-time monitoring of all svcify services, similar to `pm2 monit`.
+
+```bash
+svcify monitor                  # Start the dashboard
+svcify monitor --interval 5     # Refresh every 5 seconds (default: 2)
+```
+
+The dashboard displays:
+- **Service name** and **status** (color-coded: green=active, yellow=inactive, red=failed)
+- **Memory usage** per service
+- **CPU %** of the running process
+- **PID** of the main process
+- **Restart count** since service creation
+- **Uptime** since last state change
+- **Summary** with totals for active/inactive/failed and total memory
+
+Press `Ctrl+C` to exit.
 
 ## Options
 

@@ -19,6 +19,7 @@ print_usage() {
   echo "  status      Show service status"
   echo "  logs        Show service logs (follow mode)"
   echo "  list        List all services created by svcify"
+  echo "  monitor     Live dashboard for all svcify services"
   echo ""
   echo "Install options:"
   echo "  --app-dir <path>      Path to application (default: current directory)"
@@ -132,6 +133,200 @@ if [ "$COMMAND" = "list" ]; then
     echo "  No services found."
   fi
   exit 0
+fi
+
+# Handle monitor command (live dashboard)
+if [ "$COMMAND" = "monitor" ]; then
+  require_systemctl
+
+  # Colors
+  RED='\033[0;31m'
+  GREEN='\033[0;32m'
+  YELLOW='\033[0;33m'
+  BLUE='\033[0;34m'
+  CYAN='\033[0;36m'
+  BOLD='\033[1m'
+  DIM='\033[2m'
+  NC='\033[0m' # No Color
+
+  # Parse monitor options
+  MONITOR_INTERVAL=2
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --interval|-i)
+        MONITOR_INTERVAL="$2"
+        shift 2
+        ;;
+      *)
+        shift
+        ;;
+    esac
+  done
+
+  # Convert bytes to human readable
+  format_bytes() {
+    local bytes=$1
+    if [ "$bytes" = "[not set]" ] || [ -z "$bytes" ] || [ "$bytes" = "0" ]; then
+      echo "0B"
+      return
+    fi
+    if [ "$bytes" -ge 1073741824 ]; then
+      echo "$(awk "BEGIN {printf \"%.1f\", $bytes/1073741824}")GB"
+    elif [ "$bytes" -ge 1048576 ]; then
+      echo "$(awk "BEGIN {printf \"%.1f\", $bytes/1048576}")MB"
+    elif [ "$bytes" -ge 1024 ]; then
+      echo "$(awk "BEGIN {printf \"%.1f\", $bytes/1024}")KB"
+    else
+      echo "${bytes}B"
+    fi
+  }
+
+  # Format uptime from timestamp
+  format_uptime() {
+    local timestamp="$1"
+    if [ -z "$timestamp" ] || [ "$timestamp" = "n/a" ]; then
+      echo "-"
+      return
+    fi
+    local start_sec
+    start_sec=$(date -d "$timestamp" +%s 2>/dev/null) || { echo "-"; return; }
+    local now_sec
+    now_sec=$(date +%s)
+    local diff=$((now_sec - start_sec))
+
+    if [ "$diff" -lt 0 ]; then
+      echo "-"
+    elif [ "$diff" -lt 60 ]; then
+      echo "${diff}s"
+    elif [ "$diff" -lt 3600 ]; then
+      echo "$((diff / 60))m $((diff % 60))s"
+    elif [ "$diff" -lt 86400 ]; then
+      echo "$((diff / 3600))h $((diff % 3600 / 60))m"
+    else
+      echo "$((diff / 86400))d $((diff % 86400 / 3600))h"
+    fi
+  }
+
+  # Get status color
+  status_color() {
+    case "$1" in
+      active)   echo -e "${GREEN}" ;;
+      inactive) echo -e "${YELLOW}" ;;
+      failed)   echo -e "${RED}" ;;
+      *)        echo -e "${DIM}" ;;
+    esac
+  }
+
+  # Render the dashboard
+  render_dashboard() {
+    clear
+    local now
+    now=$(date '+%Y-%m-%d %H:%M:%S')
+
+    echo -e "${BOLD}${CYAN}╔════════════════════════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${BOLD}${CYAN}║${NC}                        ${BOLD}SVCIFY MONITOR${NC}                                     ${BOLD}${CYAN}║${NC}"
+    echo -e "${BOLD}${CYAN}╠════════════════════════════════════════════════════════════════════════════╣${NC}"
+    echo -e "${BOLD}${CYAN}║${NC} ${DIM}Updated: ${now}${NC}                            ${DIM}Refresh: ${MONITOR_INTERVAL}s | Ctrl+C to exit${NC} ${BOLD}${CYAN}║${NC}"
+    echo -e "${BOLD}${CYAN}╚════════════════════════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+
+    # Table header
+    printf "${BOLD}%-18s %-10s %10s %8s %8s %10s %12s${NC}\n" \
+      "SERVICE" "STATUS" "MEMORY" "CPU%" "PID" "RESTARTS" "UPTIME"
+    echo -e "${DIM}──────────────────────────────────────────────────────────────────────────────${NC}"
+
+    local found=false
+    local total_mem=0
+    local active_count=0
+    local failed_count=0
+    local inactive_count=0
+
+    for file in /etc/systemd/system/*.service; do
+      [ -f "$file" ] || continue
+      if grep -q "Description=svcify:" "$file" 2>/dev/null; then
+        found=true
+        local name
+        name=$(basename "$file" .service)
+
+        # Get service properties in one call
+        local props
+        props=$(systemctl show "$name" -p ActiveState,MainPID,MemoryCurrent,CPUUsageNSec,NRestarts,StateChangeTimestamp 2>/dev/null)
+
+        local status pid mem_bytes cpu_ns restarts timestamp
+        status=$(echo "$props" | grep "^ActiveState=" | cut -d= -f2)
+        pid=$(echo "$props" | grep "^MainPID=" | cut -d= -f2)
+        mem_bytes=$(echo "$props" | grep "^MemoryCurrent=" | cut -d= -f2)
+        cpu_ns=$(echo "$props" | grep "^CPUUsageNSec=" | cut -d= -f2)
+        restarts=$(echo "$props" | grep "^NRestarts=" | cut -d= -f2)
+        timestamp=$(echo "$props" | grep "^StateChangeTimestamp=" | cut -d= -f2-)
+
+        # Format values
+        local mem_human uptime_human cpu_pct color
+        mem_human=$(format_bytes "$mem_bytes")
+        uptime_human=$(format_uptime "$timestamp")
+        color=$(status_color "$status")
+
+        # CPU percentage (rough estimate based on recent usage)
+        if [ -n "$cpu_ns" ] && [ "$cpu_ns" != "0" ] && [ "$cpu_ns" != "[not set]" ]; then
+          # Get CPU % from ps if process is running
+          if [ "$pid" != "0" ] && [ -n "$pid" ]; then
+            cpu_pct=$(ps -p "$pid" -o %cpu= 2>/dev/null | tr -d ' ') || cpu_pct="0.0"
+          else
+            cpu_pct="0.0"
+          fi
+        else
+          cpu_pct="0.0"
+        fi
+
+        # Display PID or dash if not running
+        [ "$pid" = "0" ] && pid="-"
+
+        # Count stats
+        case "$status" in
+          active)   ((active_count++)) ;;
+          inactive) ((inactive_count++)) ;;
+          failed)   ((failed_count++)) ;;
+        esac
+
+        # Add to total memory
+        if [ "$mem_bytes" != "[not set]" ] && [ -n "$mem_bytes" ]; then
+          total_mem=$((total_mem + mem_bytes))
+        fi
+
+        printf "${color}%-18s %-10s${NC} %10s %8s %8s %10s %12s\n" \
+          "$name" "$status" "$mem_human" "$cpu_pct" "$pid" "$restarts" "$uptime_human"
+      fi
+    done
+
+    if [ "$found" = false ]; then
+      echo ""
+      echo -e "  ${DIM}No svcify services found.${NC}"
+      echo -e "  ${DIM}Create one with: sudo svcify install <name>${NC}"
+    else
+      echo -e "${DIM}──────────────────────────────────────────────────────────────────────────────${NC}"
+      local total_mem_human
+      total_mem_human=$(format_bytes "$total_mem")
+      echo ""
+      echo -e "${BOLD}Summary:${NC} ${GREEN}${active_count} active${NC} | ${YELLOW}${inactive_count} inactive${NC} | ${RED}${failed_count} failed${NC} | Total memory: ${BOLD}${total_mem_human}${NC}"
+    fi
+  }
+
+  # Trap to restore terminal on exit
+  cleanup() {
+    tput cnorm 2>/dev/null  # Show cursor
+    echo ""
+    exit 0
+  }
+  trap cleanup EXIT INT TERM
+
+  # Hide cursor
+  tput civis 2>/dev/null
+
+  # Main loop
+  while true; do
+    render_dashboard
+    sleep "$MONITOR_INTERVAL"
+  done
 fi
 
 # Handle setup command (install svcify itself)
