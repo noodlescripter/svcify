@@ -140,7 +140,51 @@ If no `--entry` is specified, svcify looks for files in this order:
 
 ```bash
 sudo rm /usr/local/bin/svcify
+sudo rm -rf /usr/local/share/svcify
 ```
+
+## Web UI
+
+svcify also ships a browser UI for managing services — dashboard, create/install, start/stop/restart, uninstall, and live logs.
+
+### Start the web UI
+
+```bash
+sudo svcify web
+```
+
+Then open <http://127.0.0.1:8088>. The server binds to localhost only and must run as root (so it can call `svcify install/uninstall/start/stop/restart`). Press `Ctrl+C` to stop.
+
+Options via environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SVCIFY_WEB_PORT` | `8088` | Port to listen on |
+| `SVCIFY_WEB_HOST` | `127.0.0.1` | Bind address (change with care — no auth) |
+
+```bash
+sudo SVCIFY_WEB_PORT=9000 svcify web
+```
+
+### Requirements
+
+- The web UI needs the `web/` directory. After cloning the repo, run `sudo ./svcify.sh setup` from the repo root — this copies the script to `/usr/local/bin/svcify` and the web files to `/usr/local/share/svcify/web`.
+- Node.js must be installed (the `web` command runs `npm install` on first start if `node_modules` is missing).
+- The `curl | bash` quick-install path installs **only** the CLI script, not the web UI. Use the manual setup from a repo clone to get the web UI.
+
+### API
+
+The server also exposes a small JSON API:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/services` | List services |
+| `GET` | `/api/services/:name` | Service detail (props + unit file) |
+| `POST` | `/api/services` | Install (body: `name`, `appDir`, `entry?`, `node?`, `java?`) |
+| `DELETE` | `/api/services/:name` | Uninstall |
+| `POST` | `/api/services/:name/start\|stop\|restart` | Control |
+| `GET` | `/api/services/:name/logs/history?n=200` | Last N log lines |
+| `WS` | `/api/services/:name/logs/ws` | Live log stream (JSON `{type:"log",line}`) |
 
 ## Requirements
 

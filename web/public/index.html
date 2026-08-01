@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>svcify</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="brand">
+    <svg class="brand-icon" viewBox="0 0 16 16" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M2 4.5A2.5 2.5 0 0 1 4.5 2h7A2.5 2.5 0 0 1 14 4.5v7a2.5 2.5 0 0 1-2.5 2.5h-7A2.5 2.5 0 0 1 2 11.5v-7Zm2.75 1a.75.75 0 0 0 0 1.5h6.5a.75.75 0 0 0 0-1.5h-6.5ZM4 8.75A.75.75 0 0 1 4.75 8h6.5a.75.75 0 0 1 0 1.5h-6.5A.75.75 0 0 1 4 8.75Z"/></svg>
+    svcify
+  </div>
+  <nav>
+    <a href="#" data-route="dashboard" class="active">Dashboard</a>
+    <a href="#" data-route="create">New service</a>
+  </nav>
+  <div class="header-right">
+    <span id="connIndicator" class="conn ok" title="connected">●</span>
+    <button id="refresh" class="btn ghost" title="Refresh (r)">Refresh</button>
+  </div>
+</header>
+
+<div id="toasts" class="toasts" aria-live="polite"></div>
+
+<main id="view"></main>
+
+<template id="tpl-dashboard">
+  <section>
+    <div class="dash-head">
+      <h2>Services <span id="count" class="dim"></span></h2>
+      <input id="filter" class="filter" type="search" placeholder="filter by name…" autocomplete="off">
+    </div>
+    <div id="summary" class="summary"></div>
+    <div id="failedBanner" class="banner failed hidden"></div>
+    <table class="services">
+      <thead>
+        <tr><th>Name</th><th>Status</th><th>PID</th><th>Memory</th><th>Restarts</th><th>Uptime</th><th>Enabled</th><th class="col-actions">Actions</th></tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div id="empty" class="empty hidden">
+      <div class="empty-icon">∅</div>
+      <p>No services yet.</p>
+      <button class="btn primary" data-goto="create">Create a service</button>
+    </div>
+  </section>
+</template>
+
+<template id="tpl-create">
+  <section class="card">
+    <h2>Create service</h2>
+    <p class="dim small">svcify auto-detects the entry point from your app directory. Override only if needed.</p>
+    <form id="createForm">
+      <label>Name<span class="req">*</span><input name="name" required placeholder="myapp" autocapitalize="none" spellcheck="false"></label>
+      <label>App directory<span class="req">*</span><input name="appDir" required placeholder="/path/to/app" spellcheck="false"></label>
+      <label>Entry file<input name="entry" placeholder="auto-detected" spellcheck="false"></label>
+      <label>Node binary<input name="node" placeholder="auto" spellcheck="false"></label>
+      <label>Java binary<input name="java" placeholder="auto" spellcheck="false"></label>
+      <div class="actions">
+        <button type="submit" class="btn primary" id="createSubmit">Install &amp; start</button>
+        <span id="createMsg" class="msg"></span>
+      </div>
+    </form>
+  </section>
+</template>
+
+<template id="tpl-detail">
+  <section>
+    <div class="detail-head">
+      <a href="#" class="back" title="Back (Esc)">&larr; back</a>
+      <h2 id="dname"></h2>
+      <span id="dstatus" class="badge"></span>
+    </div>
+    <div class="detail-meta" id="dmeta"></div>
+    <div class="detail-actions">
+      <button class="btn primary" data-act="start" data-actname="Start">Start</button>
+      <button class="btn warn" data-act="stop" data-actname="Stop">Stop</button>
+      <button class="btn" data-act="restart" data-actname="Restart">Restart</button>
+      <button class="btn danger" data-act="uninstall" data-actname="Uninstall">Uninstall</button>
+      <button class="btn ghost" id="toggleUnit">Unit file</button>
+    </div>
+    <pre id="unitFile" class="unit-file hidden"></pre>
+    <div class="logs-head">
+      <h3>Logs</h3>
+      <div class="logs-tools">
+        <span id="logCount" class="dim small">0 lines</span>
+        <label class="checkbox"><input type="checkbox" id="autoScroll" checked> auto-scroll</label>
+        <input id="logFilter" type="search" placeholder="filter…" autocomplete="off" class="small-input">
+        <button class="btn ghost small" id="clearLogs">clear</button>
+      </div>
+    </div>
+    <pre id="logBox" class="log-box"></pre>
+  </section>
+</template>
+
+<script src="app.js"></script>
+</body>
+</html>

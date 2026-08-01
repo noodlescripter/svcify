@@ -20,16 +20,19 @@ print_usage() {
   echo "  logs        Show service logs (follow mode)"
   echo "  list        List all services created by svcify"
   echo "  monitor     Live dashboard for all svcify services"
+  echo "  web         Start the web UI (http://127.0.0.1:8088)"
   echo ""
   echo "Install options:"
   echo "  --app-dir <path>      Path to application (default: current directory)"
   echo "  --entry <file>        Entry file (default: auto-detect)"
   echo "  --node <path>         Path to node binary (Node.js apps only)"
+  echo "  --java <path>         Path to java binary (Java apps only)"
   echo "  --dry-run             Generate service file without installing"
   echo ""
   echo "Supported app types:"
   echo "  Node.js (.js)         Runs with node"
   echo "  Shell scripts (.sh)   Runs with bash"
+  echo "  Java JAR (.jar)       Runs with java -jar"
   echo ""
   echo "Examples:"
   echo "  sudo $SCRIPT_NAME list"
@@ -329,6 +332,45 @@ if [ "$COMMAND" = "monitor" ]; then
   done
 fi
 
+# Handle web command (start web UI)
+if [ "$COMMAND" = "web" ]; then
+  require_root
+  require_systemctl
+
+  WEB_PORT="${SVCIFY_WEB_PORT:-8088}"
+  WEB_HOST="${SVCIFY_WEB_HOST:-127.0.0.1}"
+
+  WEB_DIR=""
+  SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+  if [ -d "${SCRIPT_DIR}/web" ]; then
+    WEB_DIR="${SCRIPT_DIR}/web"
+  elif [ -d "/usr/local/share/svcify/web" ]; then
+    WEB_DIR="/usr/local/share/svcify/web"
+  else
+    echo "Error: web UI files not found. Re-run 'sudo svcify setup' from the repo, or run from the source directory."
+    exit 1
+  fi
+
+  NODE_BIN="$(command -v node || echo /usr/bin/node)"
+  if [ ! -x "$NODE_BIN" ]; then
+    echo "Error: Node.js is required for the web UI but was not found."
+    exit 1
+  fi
+
+  if [ ! -d "${WEB_DIR}/node_modules" ]; then
+    echo "Installing web UI dependencies..."
+    (cd "$WEB_DIR" && npm install --omit=dev --no-audit --no-fund --loglevel=error) || {
+      echo "Error: npm install failed."
+      exit 1
+    }
+  fi
+
+  SVCIFY_BIN="$(command -v "$SCRIPT_NAME" 2>/dev/null || echo "$0")"
+  export SVCIFY_BIN SVCIFY_WEB_PORT="$WEB_PORT" SVCIFY_WEB_HOST="$WEB_HOST"
+  echo "Starting svcify web UI on http://${WEB_HOST}:${WEB_PORT}  (Ctrl+C to stop)"
+  exec "$NODE_BIN" "${WEB_DIR}/server.js"
+fi
+
 # Handle setup command (install svcify itself)
 if [ "$COMMAND" = "setup" ]; then
   require_root
@@ -360,8 +402,17 @@ if [ "$COMMAND" = "setup" ]; then
   echo "Installing..."
   cp "$0" "$SCRIPT_PATH"
   chmod +x "$SCRIPT_PATH"
+  SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+  if [ -d "${SCRIPT_DIR}/web" ]; then
+    SHARE_DIR="/usr/local/share/svcify"
+    mkdir -p "$SHARE_DIR"
+    rm -rf "${SHARE_DIR}/web"
+    cp -r "${SCRIPT_DIR}/web" "${SHARE_DIR}/web"
+    echo "  Web UI installed to ${SHARE_DIR}/web"
+  fi
   echo ""
   echo "Done! Run 'svcify --help' to get started."
+  echo "Run 'sudo svcify web' to start the web UI."
   exit 0
 fi
 
@@ -439,8 +490,9 @@ esac
 APP_DIR="$(pwd)"
 ENTRY_POINT=""
 NODE_EXEC=""
+JAVA_EXEC=""
 DRY_RUN=false
-APP_TYPE=""  # "node" or "shell", detected from entry point
+APP_TYPE=""  # "node", "shell", or "java", detected from entry point
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -454,6 +506,10 @@ while [ $# -gt 0 ]; do
       ;;
     --node)
       NODE_EXEC="$2"
+      shift 2
+      ;;
+    --java)
+      JAVA_EXEC="$2"
       shift 2
       ;;
     --dry-run)
@@ -470,6 +526,7 @@ done
 # Resolve paths
 APP_DIR="$(cd "$APP_DIR" && pwd)"
 NODE_EXEC="${NODE_EXEC:-$(command -v node || echo /usr/bin/node)}"
+JAVA_EXEC="${JAVA_EXEC:-$(command -v java || echo /usr/bin/java)}"
 
 if [ "$DRY_RUN" = false ]; then
   require_root
@@ -508,6 +565,15 @@ if [ -z "$ENTRY_POINT" ]; then
     done
   fi
   if [ -z "$ENTRY_POINT" ]; then
+    # Try JAR files
+    for candidate in app.jar application.jar server.jar main.jar; do
+      if [ -f "${APP_DIR}/${candidate}" ]; then
+        ENTRY_POINT="$candidate"
+        break
+      fi
+    done
+  fi
+  if [ -z "$ENTRY_POINT" ]; then
     echo "Error: Could not detect entry point. Use --entry to specify."
     exit 1
   fi
@@ -524,14 +590,21 @@ case "$ENTRY_POINT" in
   *.sh)
     APP_TYPE="shell"
     ;;
+  *.jar)
+    APP_TYPE="java"
+    ;;
   *)
     APP_TYPE="node"
     ;;
 esac
 
-# Validate Node.js is available for Node.js apps
+# Validate runtime is available
 if [ "$APP_TYPE" = "node" ] && [ ! -x "$NODE_EXEC" ]; then
   echo "Error: Node.js not found at '$NODE_EXEC'."
+  exit 1
+fi
+if [ "$APP_TYPE" = "java" ] && [ ! -x "$JAVA_EXEC" ]; then
+  echo "Error: Java not found at '$JAVA_EXEC'."
   exit 1
 fi
 
@@ -544,12 +617,16 @@ echo "  Entry point:   ${ENTRY_POINT}"
 echo "  App type:      ${APP_TYPE}"
 if [ "$APP_TYPE" = "node" ]; then
   echo "  Node binary:   ${NODE_EXEC}"
+elif [ "$APP_TYPE" = "java" ]; then
+  echo "  Java binary:   ${JAVA_EXEC}"
 fi
 echo "  Run as user:   ${RUN_USER}"
 
 # Generate ExecStart based on app type
 if [ "$APP_TYPE" = "shell" ]; then
   EXEC_START="/usr/bin/env bash ${ENTRY_FILE}"
+elif [ "$APP_TYPE" = "java" ]; then
+  EXEC_START="${JAVA_EXEC} -jar ${ENTRY_FILE}"
 else
   EXEC_START="${NODE_EXEC} ${ENTRY_FILE}"
 fi
